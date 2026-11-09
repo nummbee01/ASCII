@@ -47,18 +47,20 @@
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const TEXT = 'Я тебя люблю. Я жить без тебя не могу.';
-  const STEP_MS = 2000;
+  const TEXT = 'Я тебя люблю. Я жить без тебя не могу~';
+  const STEP_MS = 1000;
   const HOLD_MS = 6000;
   const FADE_MS = 1400;
   const RAMP = '#%@&$BQ08';
-  const DUST_RAMP = '.,:;+';
+  const DUST_RAMP = '.,:;+*';
+  const SPARK_RAMP = '*+·';
   const FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
   const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
   const MAX_PARTICLES = 6000;
 
-  let W = 0, H = 0, DPR = 1, particles = [], dust = [];
-  let typingStart = 0, holdUntil = Infinity, fadeStart = Infinity;
+  let W = 0, H = 0, DPR = 1, particles = [], dust = [], stars = [], sparks = [];
+  let typingStart = 0, typingEnd = 0, holdUntil = Infinity, fadeStart = Infinity;
+  let letters = [], sparkCursor = 0, burstDone = true, prevNow = 0, nextAmbient = 0;
   const mouse = { x: -1e4, y: -1e4 };
 
   const font = (s) => `900 ${s}px ${SANS}`;
@@ -134,7 +136,7 @@
     }
 
     const data = o.getImageData(0, 0, W, H).data;
-    let step = 8;
+    let step = W < 720 ? 5 : 8;
     let points = [];
     const scan = (s) => {
       const out = [];
@@ -185,9 +187,82 @@
   function build() {
     const { points, lastOrder } = sampleTargets(TEXT);
     typingStart = reduce ? -Infinity : performance.now() + 1200;
-    holdUntil = reduce ? Infinity : typingStart + (lastOrder + 1) * STEP_MS + HOLD_MS;
+    typingEnd = typingStart + (lastOrder + 1) * STEP_MS;
+    holdUntil = reduce ? Infinity : typingEnd + HOLD_MS;
     fadeStart = reduce ? Infinity : holdUntil - FADE_MS;
     particles = points.map(makeParticle);
+
+    const groups = new Map();
+    for (const pt of points) {
+      const g = groups.get(pt.order) || { x: 0, y: 0, n: 0 };
+      g.x += pt.x; g.y += pt.y; g.n++;
+      groups.set(pt.order, g);
+    }
+    letters = [...groups].sort((a, b) => a[0] - b[0]).map(([order, g]) => ({
+      t: typingStart + order * STEP_MS,
+      x: g.x / g.n,
+      y: g.y / g.n,
+    }));
+
+    sparks = [];
+    sparkCursor = 0;
+    burstDone = reduce;
+    nextAmbient = typingStart;
+  }
+
+  function seedStars() {
+    stars = [];
+    const n = Math.min(150, Math.round((W * H) / 22000));
+    for (let i = 0; i < n; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        ch: SPARK_RAMP[(Math.random() * SPARK_RAMP.length) | 0],
+        c: Math.random() < 0.55 ? '#fff1d0' : colorAt(Math.random()),
+        a: 0.10 + Math.random() * 0.26,
+        speed: 0.6 + Math.random() * 1.7,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function addSparks(x, y, now, count, speed, life) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const v = speed * (0.35 + Math.random() * 0.65);
+      sparks.push({
+        x: x + (Math.random() - 0.5) * 10,
+        y: y + (Math.random() - 0.5) * 10,
+        vx: Math.cos(a) * v,
+        vy: Math.sin(a) * v - 24,
+        born: now,
+        life: life * (0.6 + Math.random() * 0.8),
+        g: 0.9,
+        ch: SPARK_RAMP[(Math.random() * 2) | 0],
+        c: Math.random() < 0.6 ? '#fff1d0' : colorAt(Math.random()),
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function burst(now) {
+    const n = 150;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.05;
+      const v = 130 + Math.random() * 260;
+      sparks.push({
+        x: W / 2,
+        y: H / 2,
+        vx: Math.cos(a) * v,
+        vy: Math.sin(a) * v,
+        born: now,
+        life: 900 + Math.random() * 900,
+        g: 0.08,
+        ch: SPARK_RAMP[(Math.random() * SPARK_RAMP.length) | 0],
+        c: Math.random() < 0.5 ? '#fff1d0' : colorAt(Math.random()),
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
   }
 
   function seedDust() {
@@ -217,18 +292,28 @@
     canvas.style.height = H + 'px';
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     seedDust();
+    seedStars();
     build();
   }
 
   function frame(now) {
     requestAnimationFrame(frame);
     if (now >= holdUntil) build();
+    const dt = Math.min(0.05, Math.max(0, (now - prevNow) / 1000)) || 0.016;
+    prevNow = now;
     const fade = now > fadeStart ? Math.max(0, (holdUntil - now) / FADE_MS) : 1;
 
     ctx.clearRect(0, 0, W, H);
     ctx.font = `10px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+
+    for (const s of stars) {
+      const tw = reduce ? 0.45 : Math.max(0, Math.sin(now * 0.001 * s.speed + s.phase)) ** 6;
+      ctx.globalAlpha = s.a * (0.22 + 0.78 * tw) * fade;
+      ctx.fillStyle = s.c;
+      ctx.fillText(s.ch, s.x, s.y);
+    }
 
     for (const d of dust) {
       if (!reduce) {
@@ -275,6 +360,35 @@
       ctx.globalAlpha = p.a * twinkle * fade;
       ctx.fillStyle = p.c;
       ctx.fillText(p.ch, x, y);
+    }
+
+    if (!reduce) {
+      while (sparkCursor < letters.length && now >= letters[sparkCursor].t) {
+        const L = letters[sparkCursor++];
+        addSparks(L.x, L.y, now, 10, 170, 1000);
+      }
+      if (now >= nextAmbient && sparkCursor > 0) {
+        const L = letters[(Math.random() * sparkCursor) | 0];
+        addSparks(L.x, L.y, now, 2, 110, 800);
+        nextAmbient = now + 260 + Math.random() * 320;
+      }
+      if (!burstDone && now >= typingEnd + 280) {
+        burst(now);
+        burstDone = true;
+      }
+    }
+
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const s = sparks[i];
+      const age = (now - s.born) / s.life;
+      if (age >= 1) { sparks.splice(i, 1); continue; }
+      s.vy += 240 * dt * s.g;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      const a = Math.pow(1 - age, 1.4) * (0.6 + 0.4 * Math.sin(now * 0.03 + s.phase));
+      ctx.globalAlpha = a * fade;
+      ctx.fillStyle = s.c;
+      ctx.fillText(s.ch, s.x, s.y);
     }
     ctx.globalAlpha = 1;
   }
