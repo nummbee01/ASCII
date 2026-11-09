@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JIN2 — ASCII Code Art</title>
+<meta name="description" content="Six ASCII animations drawn only with letters, numbers and symbols. Art by JIN2.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2307080a'/%3E%3Ctext x='4' y='23' font-family='monospace' font-size='20' fill='%237ef0c0'%3E@%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#07080a; --panel:#0d0f13; --line:#1e232b;
+    --ink:#e8edf2; --mute:#8a94a3;
+    --mint:#7ef0c0; --pink:#ff8fc7;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    background-image:
+      radial-gradient(60rem 40rem at 15% -10%, rgba(126,240,192,.10), transparent 60%),
+      radial-gradient(50rem 35rem at 95% 5%, rgba(255,143,199,.10), transparent 60%);
+    background-repeat:no-repeat;
+  }
+  a{color:var(--mint); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1180px; margin:0 auto; padding:0 24px 80px}
+  header{padding:72px 0 40px; border-bottom:1px solid var(--line)}
+  .kicker{color:var(--pink); letter-spacing:.28em; font-size:12px; text-transform:uppercase; margin:0 0 18px}
+  h1{font-size:clamp(34px,7vw,72px); line-height:1.02; margin:0 0 18px; letter-spacing:-.03em; font-weight:700}
+  h1 span{color:var(--mint)}
+  .lede{max-width:62ch; color:var(--mute); margin:0}
+  .lede strong{color:var(--ink); font-weight:600}
+  .cursor{display:inline-block; width:.6em; height:1.05em; margin-left:.15em; background:var(--mint); vertical-align:-.15em; animation:blink 1.1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .meta{display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:28px; font-size:13px; color:var(--mute)}
+  .meta span::before{content:"› "; color:var(--mint)}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:24px; margin-top:44px}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden;
+    display:flex; flex-direction:column; transition:transform .18s ease, border-color .18s ease;
+  }
+  .card:hover{transform:translateY(-3px); border-color:#33404d}
+  .shot{display:block; background:#000; border-bottom:1px solid var(--line); aspect-ratio:1/1; overflow:hidden}
+  .shot img{width:100%; height:100%; object-fit:cover; display:block}
+  .body{padding:20px 20px 22px; display:flex; flex-direction:column; gap:10px; flex:1}
+  h2{font-size:18px; margin:0; letter-spacing:.02em}
+  .sub{color:var(--pink); font-size:11px; letter-spacing:.18em; text-transform:uppercase; margin:0}
+  .desc{color:var(--mute); font-size:14px; margin:0}
+  .tech{color:var(--mute); font-size:12px; margin:0}
+  .run{
+    background:#060708; border:1px solid var(--line); border-radius:8px;
+    padding:10px 12px; font-size:12px; color:#cdd6e0; overflow-x:auto; white-space:nowrap;
+  }
+  .run b{color:var(--mint); font-weight:400}
+  .links{display:flex; gap:16px; font-size:13px; margin-top:auto; padding-top:6px}
+  .links a::after{content:" ↗"; font-size:11px}
+  footer{border-top:1px solid var(--line); margin-top:64px; padding-top:28px; color:var(--mute); font-size:13px; display:flex; flex-wrap:wrap; gap:10px 24px; justify-content:space-between}
+  .note{color:#5f6a78; font-size:12px; max-width:70ch; margin-top:14px}
+  @media (prefers-reduced-motion:reduce){.cursor{animation:none} .card{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="kicker">ASCII Code Art · 2026</p>
+    <h1>Drawn with letters,<br><span>numbers and symbols.</span><span class="cursor" aria-hidden="true"></span></h1>
+    <p class="lede"><strong>Six real-time terminal animations by JIN2.</strong> Each one is a single Python file that builds a 3D scene out of points, lights it, and prints it as a grid of characters.</p>
+    <div class="meta">
+      <span>Python · NumPy · pygame-ce</span>
+      <span>6 pieces</span>
+      <span>30 fps ASCII</span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <article class="card">
+      <a class="shot" href="ROSE/images/preview.gif" aria-label="Play the Rose animation"><img src="ROSE/images/preview.gif" alt="A rose drawn in ASCII characters blooming" loading="lazy" decoding="async"></a>
+      <div class="body">
+        <p class="sub">Rose</p>
+        <h2>IN BLOOM</h2>
+        <p class="desc">A single line of light grows into a stem, a bud forms, and petal by petal it opens. A rose that is never cut and never fades.</p>
+        <p class="tech">3D geometry · spiral petals · depth ordering · character shading</p>
+        <div class="run"><b>$</b> cd ROSE &amp;&amp; pip install -r requirements.txt &amp;&amp; python rose.py</div>
+        <div class="links"><a href="ROSE/rose.py">source</a><a href="ROSE/README.md">readme</a></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="BIRTHDAY-CAKE/images/preview.gif" aria-label="Play the Birthday Cake animation"><img src="BIRTHDAY-CAKE/images/preview.gif" alt="A birthday cake with a lit candle drawn in ASCII" loading="lazy" decoding="async"></a>
+      <div class="body">
+        <p class="sub">Birthday Cake</p>
+        <h2>HAPPY BIRTHDAY</h2>
+        <p class="desc">A slice of cake builds itself from the plate up, one candle is lit, and its warm light flickers across the frosting. Confetti falls, and the wish appears.</p>
+        <p class="tech">procedural frosting · particle confetti · flickering light</p>
+        <div class="run"><b>$</b> cd BIRTHDAY-CAKE &amp;&amp; pip install -r requirements.txt &amp;&amp; python birthday_cake.py</div>
+        <div class="links"><a href="BIRTHDAY-CAKE/birthday_cake.py">source</a><a href="BIRTHDAY-CAKE/README.md">readme</a></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="BLACK-HOLE/images/preview.gif" aria-label="Play the Black Hole animation"><img src="BLACK-HOLE/images/preview.gif" alt="A black hole with an accretion disk drawn in ASCII" loading="lazy" decoding="async"></a>
+      <div class="body">
+        <p class="sub">Black Hole</p>
+        <h2>BLACK HOLE</h2>
+        <p class="desc">A thin circle of light draws itself, a red glow swells, and the disk opens out to both sides. At the flash the view moves in, and sparks ride the orbits.</p>
+        <p class="tech">accretion disk · orbital particles · camera push-in</p>
+        <div class="run"><b>$</b> cd BLACK-HOLE &amp;&amp; pip install -r requirements.txt &amp;&amp; python black_hole.py</div>
+        <div class="links"><a href="BLACK-HOLE/black_hole.py">source</a><a href="BLACK-HOLE/README.md">readme</a></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="CAT-KNIGHT/images/preview.gif" aria-label="Play the Cat Knight animation"><img src="CAT-KNIGHT/images/preview.gif" alt="A kitten in armour holding a sword, drawn in ASCII" loading="lazy" decoding="async"></a>
+      <div class="body">
+        <p class="sub">Cat Knight</p>
+        <h2>CAT KNIGHT</h2>
+        <p class="desc">A tiny kitten in full armour holding a sword bigger than itself. The camera pulls back from its face to the whole knight while wind moves the cape, fur and grass.</p>
+        <p class="tech">photo-driven glyphs · cloth motion · camera dolly</p>
+        <div class="run"><b>$</b> cd CAT-KNIGHT &amp;&amp; pip install -r requirements.txt &amp;&amp; python cat_knight.py</div>
+        <div class="links"><a href="CAT-KNIGHT/cat_knight.py">source</a><a href="CAT-KNIGHT/README.md">readme</a></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="DIAMOND-RING/images/preview.gif" aria-label="Play the Diamond Ring animation"><img src="DIAMOND-RING/images/preview.gif" alt="A diamond ring forming out of light in ASCII" loading="lazy" decoding="async"></a>
+      <div class="body">
+        <p class="sub">Diamond Ring</p>
+        <h2>WILL YOU</h2>
+        <p class="desc">A diamond ring emerges from light, gradually taking shape through characters and motion. A small object that carries a very large question.</p>
+        <p class="tech">refraction highlights · rotating gem · point-cloud reveal</p>
+        <div class="run"><b>$</b> cd DIAMOND-RING &amp;&amp; pip install -r requirements.txt &amp;&amp; python diamond_ring.py</div>
+        <div class="links"><a href="DIAMOND-RING/diamond_ring.py">source</a><a href="DIAMOND-RING/README.md">readme</a></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shot" href="MONEY-RAIN/images/preview.gif" aria-label="Play the Money Rain animation"><img src="MONEY-RAIN/images/preview.gif" alt="Hundred-dollar notes falling in ASCII" loading="lazy" decoding="async"></a>
+      <div class="body">
+        <p class="sub">Money Rain</p>
+        <h2>MONEY RAIN</h2>
+        <p class="desc">Hundred-dollar notes fall one after another, each at its own depth and speed. They sway, tumble and turn on the way down.</p>
+        <p class="tech">instanced notes · tumbling rotation · depth-sorted rain</p>
+        <div class="run"><b>$</b> cd MONEY-RAIN &amp;&amp; pip install -r requirements.txt &amp;&amp; python money_rain.py</div>
+        <div class="links"><a href="MONEY-RAIN/money_rain.py">source</a><a href="MONEY-RAIN/README.md">readme</a></div>
+      </div>
+    </article>
+  </main>
+
+  <footer>
+    <div>
+      Art, code and words by <a href="https://github.com/JIN2-ASCII">JIN2</a> · <a href="https://instagram.com/jin_22ee">@jin_22ee</a>
+    </div>
+    <div>
+      <a href="https://github.com/JIN2-ASCII/-JIN2-ASCII">original repository</a>
+    </div>
+  </footer>
+  <p class="note">Fan-hosted mirror. All artwork © 2026 JIN2, all rights reserved. Images and video may not be reused without permission. Each piece runs locally: the animations are rendered with pygame, so they play in a desktop window rather than in the browser — the previews above are recordings of that output.</p>
+</div>
+</body>
+</html>
