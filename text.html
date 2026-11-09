@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GLYPH FIELD — text animation</title>
+<title>For you~ — text animation</title>
 <meta name="description" content="A message that writes itself, one letter at a time, assembled from a field of ASCII glyphs. An original animation by @nummbee01.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2307080a'/%3E%3Ctext x='4' y='23' font-family='monospace' font-size='20' fill='%237ef0c0'%3E@%3C/text%3E%3C/svg%3E">
 <style>
@@ -28,7 +28,7 @@
   }
   #c{position:fixed; inset:0; width:100%; height:100%; display:block}
   .hud{position:fixed; top:22px; left:24px; z-index:2; pointer-events:none}
-  .hud b{display:block; font-size:11px; letter-spacing:.3em; color:var(--pink); text-transform:uppercase; font-weight:600}
+  .hud b{display:block; font-size:12px; letter-spacing:.16em; color:var(--pink); font-weight:600}
   .hud span{font-size:12px; color:var(--mute)}
   .hud a{color:var(--mint); text-decoration:none; pointer-events:auto}
   .hud a:hover{text-decoration:underline}
@@ -37,10 +37,10 @@
 </head>
 <body>
 <canvas id="c" aria-hidden="true"></canvas>
-<p class="sr">A message that writes itself one letter at a time: Я тебя люблю. Я жить без тебя не могу. Click or tap to scatter the glyphs.</p>
+<p class="sr">A message that writes itself one letter at a time: Я тебя люблю. Я жить без тебя не могу~. Hover to open a black hole, click or tap to scatter the glyphs.</p>
 <div class="hud">
-  <b>Glyph Field</b>
-  <span>a message, writing itself · click to scatter · <a href="index.html">gallery</a></span>
+  <b>For you~</b>
+  <span>a message by <a href="https://github.com/nummbee01">@nummbee01</a> · hover for black hole · click to scatter</span>
 </div>
 <script>
 (() => {
@@ -62,6 +62,7 @@
   let typingStart = 0, typingEnd = 0, holdUntil = Infinity, fadeStart = Infinity;
   let letters = [], sparkCursor = 0, burstDone = true, prevNow = 0, nextAmbient = 0;
   const mouse = { x: -1e4, y: -1e4 };
+  let pointerIn = false;
 
   const font = (s) => `900 ${s}px ${SANS}`;
   const STOPS = [[126, 240, 192], [255, 241, 208], [255, 143, 199]];
@@ -335,16 +336,22 @@
         p.x = p.tx;
         p.y = p.ty;
       } else {
-        p.vx += (p.tx - p.x) * 0.06;
-        p.vy += (p.ty - p.y) * 0.06;
-
         const dx = p.x - mouse.x, dy = p.y - mouse.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 < 11000) {
+        const REACH = 200;
+        const infl = d2 < REACH * REACH ? 1 - Math.sqrt(d2) / REACH : 0;
+
+        const k = 0.06 * (1 - 0.85 * infl);
+        p.vx += (p.tx - p.x) * k;
+        p.vy += (p.ty - p.y) * k;
+
+        if (infl > 0) {
           const d = Math.sqrt(d2) || 1;
-          const f = (1 - d / 105) * 2.2;
-          p.vx += (dx / d) * f;
-          p.vy += (dy / d) * f;
+          const pull = 7 * infl * infl;
+          p.vx -= (dx / d) * pull;
+          p.vy -= (dy / d) * pull;
+          p.vx += (-dy / d) * pull * 0.75;
+          p.vy += (dx / d) * pull * 0.75;
         }
 
         p.vx *= 0.86; p.vy *= 0.86;
@@ -390,6 +397,21 @@
       ctx.fillStyle = s.c;
       ctx.fillText(s.ch, s.x, s.y);
     }
+
+    if (!reduce && pointerIn) {
+      const r = 26;
+      const g = ctx.createRadialGradient(mouse.x, mouse.y, r * 0.1, mouse.x, mouse.y, r * 3.2);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(0.34, 'rgba(2,3,4,1)');
+      g.addColorStop(0.42, 'rgba(126,240,192,0.30)');
+      g.addColorStop(0.62, 'rgba(255,143,199,0.12)');
+      g.addColorStop(1, 'rgba(255,143,199,0)');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(mouse.x, mouse.y, r * 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.globalAlpha = 1;
   }
 
@@ -402,10 +424,12 @@
   canvas.addEventListener('pointermove', (e) => {
     mouse.x = e.clientX;
     mouse.y = e.clientY;
+    pointerIn = true;
   });
   canvas.addEventListener('pointerleave', () => {
     mouse.x = -1e4;
     mouse.y = -1e4;
+    pointerIn = false;
   });
   canvas.addEventListener('pointerdown', (e) => {
     if (reduce) return;
