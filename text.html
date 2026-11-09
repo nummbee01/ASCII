@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GLYPH FIELD — text animation</title>
+<meta name="description" content="Type anything and watch it assemble from a field of ASCII glyphs. An original animation by @nummbee01.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2307080a'/%3E%3Ctext x='4' y='23' font-family='monospace' font-size='20' fill='%237ef0c0'%3E@%3C/text%3E%3C/svg%3E">
+<style>
+  :root{ --bg:#07080a; --ink:#e8edf2; --mute:#8a94a3; --mint:#7ef0c0; --pink:#ff8fc7; }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink); overflow:hidden;
+    font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none;
+    background:
+      radial-gradient(60rem 40rem at 18% -12%, rgba(126,240,192,.12), transparent 62%),
+      radial-gradient(52rem 36rem at 92% 112%, rgba(255,143,199,.12), transparent 62%),
+      radial-gradient(46rem 24rem at 50% 52%, rgba(126,240,192,.055), transparent 70%);
+  }
+  body::after{
+    content:""; position:fixed; inset:0; pointer-events:none; opacity:.5;
+    background:repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 3px);
+    mix-blend-mode:overlay;
+  }
+  #c{position:fixed; inset:0; width:100%; height:100%; display:block}
+  .hud{position:fixed; top:22px; left:24px; z-index:2; pointer-events:none}
+  .hud b{display:block; font-size:11px; letter-spacing:.3em; color:var(--pink); text-transform:uppercase; font-weight:600}
+  .hud span{font-size:12px; color:var(--mute)}
+  .hud a{color:var(--mint); text-decoration:none; pointer-events:auto}
+  .hud a:hover{text-decoration:underline}
+  .bar{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%); z-index:2;
+    display:flex; align-items:center; gap:10px; padding:8px 16px;
+    background:rgba(10,12,15,.74); border:1px solid #1e232b; border-radius:999px;
+    backdrop-filter:blur(8px);
+  }
+  .bar label{color:var(--mute); font-size:12px}
+  #t{
+    background:transparent; border:0; outline:0; color:var(--ink);
+    font:600 14px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    letter-spacing:.12em; width:min(64vw,460px); text-transform:uppercase;
+  }
+  #t::placeholder{color:#5f6a78}
+  .hint{color:#5f6a78; font-size:11px; white-space:nowrap}
+  .sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
+  @media (max-width:640px){ .hint{display:none} .bar{bottom:18px} }
+</style>
+</head>
+<body>
+<canvas id="c" aria-hidden="true"></canvas>
+<p class="sr">An animation of text assembled from small ASCII characters. Type in the text field to change the word, click or tap to scatter the glyphs.</p>
+<div class="hud">
+  <b>Glyph Field</b>
+  <span>type to reshape · click to scatter · <a href="index.html">gallery</a></span>
+</div>
+<div class="bar">
+  <label for="t">text</label>
+  <input id="t" value="Я ТЕБЯ ЛЮБЛЮ. Я ЖИТЬ БЕЗ ТЕБЯ НЕ МОГУ." maxlength="90" autocomplete="off" spellcheck="false" aria-label="Text to render">
+  <span class="hint">↵ to settle</span>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const input = document.getElementById('t');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const RAMP = '01<>[]{}()/\\|-_=+*#%&@$BQ';
+  const FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+  const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+  const MAX_PARTICLES = 5200;
+
+  let W = 0, H = 0, DPR = 1, particles = [], dust = [];
+  const mouse = { x: -1e4, y: -1e4 };
+
+  const font = (s) => `900 ${s}px ${SANS}`;
+
+  function linesOf(text) {
+    const sentences = text.replace(/([.!?…])\s+/g, '$1\n').split('\n');
+    const lines = [];
+    for (const sentence of sentences) {
+      const s = sentence.trim();
+      if (!s) continue;
+      if (s.length <= 30) { lines.push(s); continue; }
+      let line = '';
+      for (const word of s.split(/\s+/)) {
+        if (line && (line + ' ' + word).length > 28) { lines.push(line); line = word; }
+        else line = line ? line + ' ' + word : word;
+      }
+      if (line) lines.push(line);
+    }
+    return lines;
+  }
+
+  function sampleTargets(text) {
+    const lines = linesOf(text);
+    const off = document.createElement('canvas');
+    off.width = W;
+    off.height = H;
+    const o = off.getContext('2d');
+    const maxW = W * 0.86;
+    const maxH = H * 0.6;
+    let size = Math.min(420, maxH / (lines.length * 1.2));
+    o.font = font(size);
+    let widest = 0;
+    for (const line of lines) widest = Math.max(widest, o.measureText(line).width);
+    if (widest > maxW) {
+      size *= maxW / widest;
+      o.font = font(size);
+    }
+    const lineH = size * 1.2;
+    const top = H / 2 - (lineH * lines.length) / 2;
+    o.fillStyle = '#fff';
+    o.textAlign = 'center';
+    o.textBaseline = 'middle';
+    lines.forEach((line, i) => o.fillText(line, W / 2, top + lineH * (i + 0.5)));
+
+    const data = o.getImageData(0, 0, W, H).data;
+    let step = 9;
+    let points = [];
+    const scan = (s) => {
+      const out = [];
+      for (let y = 0; y < H; y += s) {
+        for (let x = 0; x < W; x += s) {
+          if (data[(y * W + x) * 4 + 3] > 140) out.push([x, y]);
+        }
+      }
+      return out;
+    };
+    points = scan(step);
+    while (points.length > MAX_PARTICLES) {
+      step *= 1.16;
+      points = scan(step);
+    }
+    return points;
+  }
+
+  function makeParticle(x, y, now, spawn) {
+    const hue = 158 + (x / W) * 172;
+    const light = 62 + 10 * Math.sin(x * 0.02 + y * 0.03);
+    let sx = x, sy = y;
+    if (spawn) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = Math.max(W, H) * (0.45 + Math.random() * 0.75);
+      sx = W / 2 + Math.cos(ang) * r;
+      sy = H / 2 + Math.sin(ang) * r;
+    }
+    return {
+      x: sx, y: sy, tx: x, ty: y, vx: 0, vy: 0,
+      ch: RAMP[(Math.random() * RAMP.length) | 0],
+      c: `hsl(${hue.toFixed(0)} 88% ${light.toFixed(0)}%)`,
+      a: 0.72 + Math.random() * 0.28,
+      phase: Math.random() * Math.PI * 2,
+      delay: now + (spawn ? 140 + Math.random() * 900 : Math.random() * 220),
+    };
+  }
+
+  function build(spawn) {
+    const text = (input.value.trim() || 'ASCII').toUpperCase().slice(0, 22);
+    const points = sampleTargets(text);
+    const now = performance.now();
+    const old = particles;
+    particles = points.map(([x, y], i) => {
+      if (spawn || old.length === 0) return makeParticle(x, y, now, true);
+      const p = old[i % old.length];
+      return {
+        ...p, tx: x, ty: y,
+        ch: RAMP[(Math.random() * RAMP.length) | 0],
+        delay: now + Math.random() * 220,
+      };
+    });
+  }
+
+  function seedDust() {
+    dust = [];
+    const n = Math.round((W * H) / 16000);
+    for (let i = 0; i < n; i++) {
+      const hue = 158 + Math.random() * 172;
+      dust.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 0.12,
+        vy: -0.04 - Math.random() * 0.12,
+        ch: RAMP[(Math.random() * RAMP.length) | 0],
+        c: `hsl(${hue.toFixed(0)} 70% 62%)`,
+        a: 0.06 + Math.random() * 0.16,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    seedDust();
+    build(true);
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = `11px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for (const d of dust) {
+      if (!reduce) {
+        d.x += d.vx;
+        d.y += d.vy;
+        if (d.y < -12) { d.y = H + 12; d.x = Math.random() * W; }
+        if (d.x < -12) d.x = W + 12;
+        else if (d.x > W + 12) d.x = -12;
+      }
+      ctx.globalAlpha = d.a * (reduce ? 1 : 0.65 + 0.35 * Math.sin(now * 0.0011 + d.phase));
+      ctx.fillStyle = d.c;
+      ctx.fillText(d.ch, d.x, d.y);
+    }
+
+    for (const p of particles) {
+      if (reduce) {
+        p.x = p.tx; p.y = p.ty;
+      } else if (now >= p.delay) {
+        p.vx += (p.tx - p.x) * 0.055;
+        p.vy += (p.ty - p.y) * 0.055;
+
+        const dx = p.x - mouse.x, dy = p.y - mouse.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < 11000) {
+          const d = Math.sqrt(d2) || 1;
+          const f = (1 - d / 105) * 2.2;
+          p.vx += (dx / d) * f;
+          p.vy += (dy / d) * f;
+        }
+
+        p.vx *= 0.86; p.vy *= 0.86;
+        p.vx = Math.max(-18, Math.min(18, p.vx));
+        p.vy = Math.max(-18, Math.min(18, p.vy));
+        p.x += p.vx; p.y += p.vy;
+      }
+
+      const wobble = reduce ? 0 : 1.5;
+      const x = p.x + Math.sin(now * 0.0011 + p.phase) * wobble;
+      const y = p.y + Math.cos(now * 0.0009 + p.phase * 1.4) * wobble;
+      const twinkle = reduce ? 1 : 0.66 + 0.34 * Math.sin(now * 0.0022 + p.phase * 3);
+      ctx.globalAlpha = p.a * twinkle;
+      ctx.fillStyle = p.c;
+      ctx.fillText(p.ch, x, y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 180);
+  });
+
+  let inputTimer;
+  input.addEventListener('input', () => {
+    clearTimeout(inputTimer);
+    inputTimer = setTimeout(() => build(false), 260);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') input.blur();
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+  });
+  canvas.addEventListener('pointerleave', () => {
+    mouse.x = -1e4;
+    mouse.y = -1e4;
+  });
+  canvas.addEventListener('pointerdown', (e) => {
+    if (reduce) return;
+    for (const p of particles) {
+      const dx = p.x - e.clientX, dy = p.y - e.clientY;
+      const d = Math.hypot(dx, dy) || 1;
+      const f = Math.min(28, 3000 / (d + 70));
+      p.vx += (dx / d) * f;
+      p.vy += (dy / d) * f;
+    }
+  });
+
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
