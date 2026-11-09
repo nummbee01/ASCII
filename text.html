@@ -136,7 +136,7 @@
     }
 
     const data = o.getImageData(0, 0, W, H).data;
-    let step = W < 720 ? 5 : 8;
+    let step = W < 720 ? 5 : 6;
     let points = [];
     const scan = (s) => {
       const out = [];
@@ -144,7 +144,7 @@
         const lineMeta = meta.find((q) => y >= q.y0 && y < q.y1);
         if (!lineMeta) continue;
         for (let x = 0; x < W; x += s) {
-          if (data[(y * W + x) * 4 + 3] <= 140) continue;
+          if (data[(y * W + x) * 4 + 3] <= 115) continue;
           let r = null;
           for (const q of lineMeta.ranges) {
             if (x >= q.x0 && x < q.x1) { r = q; break; }
