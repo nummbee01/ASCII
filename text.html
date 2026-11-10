@@ -33,29 +33,6 @@
   .hud a{color:var(--mint); text-decoration:none; pointer-events:auto}
   .hud a:hover{text-decoration:underline}
   .sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
-  #ring{
-    position:fixed; left:50%; top:46%; transform:translate(-50%,-50%);
-    width:min(90vw, 70vh); height:auto; z-index:3; pointer-events:none;
-    mix-blend-mode:screen; opacity:0; transition:opacity 1.4s ease;
-  }
-  #ring.on{opacity:1}
-  #ask{
-    position:fixed; left:50%; bottom:10vh; margin:0; z-index:4; pointer-events:none;
-    width:min(92vw, 30ch); text-align:center;
-    font:italic 600 clamp(19px, 3.4vw, 38px)/1.3 Georgia, 'Times New Roman', serif;
-    letter-spacing:.01em;
-    background:linear-gradient(92deg, var(--mint), #fff1d0 52%, var(--pink));
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-    filter:drop-shadow(0 0 24px rgba(255,143,199,.3));
-    opacity:0; transform:translate(-50%, 14px);
-    transition:opacity 1.8s ease, transform 1.8s ease;
-  }
-  #ask.on{opacity:1; transform:translate(-50%, 0)}
-  #ask b{
-    display:block; margin-top:.6em; font:400 .38em/1 ui-monospace, monospace;
-    color:var(--pink); -webkit-text-fill-color:var(--pink);
-    letter-spacing:.34em; opacity:.75;
-  }
 </style>
 </head>
 <body>
@@ -65,17 +42,15 @@
   <b>For you~</b>
   <span>a message by <a href="https://github.com/nummbee01">@nummbee01</a> · hover: black hole · hold: grow</span>
 </div>
-<video id="ring" src="diamond-ring.mp4" muted playsinline preload="auto" aria-label="ASCII diamond ring animation by @jin_22ee"></video>
-<p id="ask">Ты выйдешь за меня замуж?<b>♥</b></p>
 <script>
 (() => {
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
-  const ringVideo = document.getElementById('ring');
-  const askEl = document.getElementById('ask');
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const TEXT = 'Я тебя люблю. Я жить без тебя не могу~';
+  const ASK = 'Ты выйдешь за меня замуж?';
   const STEP_MS = 1000;
+  const ASK_MS = 110;
   const HOLD_MS = 6000;
   const OUT_MS = 500;
   const RAMP = '#%@&$BQ08';
@@ -89,7 +64,8 @@
   let W = 0, H = 0, DPR = 1, particles = [], dust = [], stars = [], sparks = [], hearts = [], flutter = [], petals = [];
   let typingStart = 0, typingEnd = 0, holdUntil = Infinity, disappearStart = Infinity;
   let letters = [], sparkCursor = 0, burstDone = true, prevNow = 0, nextAmbient = 0;
-  let ringPhase = false, askShown = false;
+  let phase = 'message', ringParts = [], gem = { x: 0, y: 0 }, gemBurstAt = -Infinity, gemBurstDone = true;
+  let nextGemSpark = -Infinity, nextGemHeart = -Infinity;
   const mouse = { x: -1e4, y: -1e4 };
   let pointerIn = false, pressing = false, holeR = 16, pressAt = 0, meteor = null, nextMeteor = 0;
 
@@ -122,11 +98,15 @@
     return lines;
   }
 
-  function sampleTargets(text) {
-    const lines = linesOf(text, W < 720 ? 18 : 30);
-    const maxW = W * 0.88;
-    const maxH = H * 0.64;
-    let size = Math.min(420, maxH / (lines.length * 1.2));
+  function sampleText(text, opts) {
+    const o2 = opts || {};
+    const maxChars = o2.maxChars || (W < 720 ? 18 : 30);
+    const maxW = o2.maxW === undefined ? W * 0.88 : o2.maxW;
+    const maxH = o2.maxH === undefined ? H * 0.64 : o2.maxH;
+    const centerY = o2.centerY === undefined ? H / 2 : o2.centerY;
+    const maxSize = o2.maxSize || 420;
+    const lines = linesOf(text, maxChars);
+    let size = Math.min(maxSize, maxH / (lines.length * 1.2));
     const m = document.createElement('canvas').getContext('2d');
     m.font = font(size);
     let widest = 0;
@@ -136,7 +116,7 @@
       m.font = font(size);
     }
     const lineH = size * 1.2;
-    const top = H / 2 - (lineH * lines.length) / 2;
+    const top = centerY - (lineH * lines.length) / 2;
 
     const off = document.createElement('canvas');
     off.width = W;
@@ -199,9 +179,9 @@
     return { points, lastOrder: Math.max(0, order - 1) };
   }
 
-  function makeParticle(pt) {
+  function makeParticle(pt, step = STEP_MS, spread = 150, instant = false) {
     const ang = Math.random() * Math.PI * 2;
-    const r = 30 + Math.random() * 150;
+    const r = instant ? 0 : 24 + Math.random() * spread;
     return {
       x: pt.x + Math.cos(ang) * r,
       y: pt.y + Math.sin(ang) * r,
@@ -212,17 +192,17 @@
       a: 0.85 + Math.random() * 0.15,
       phase: Math.random() * Math.PI * 2,
       glyphAt: 0,
-      reveal: reduce ? -Infinity : typingStart + pt.order * STEP_MS + Math.random() * 220,
+      reveal: (reduce || instant) ? -Infinity : typingStart + pt.order * step + Math.random() * 220,
     };
   }
 
   function build() {
-    const { points, lastOrder } = sampleTargets(TEXT);
+    const { points, lastOrder } = sampleText(TEXT);
     typingStart = reduce ? -Infinity : performance.now() + 1200;
     typingEnd = reduce ? Infinity : typingStart + (lastOrder + 1) * STEP_MS;
     disappearStart = reduce ? Infinity : typingEnd + HOLD_MS;
     holdUntil = reduce ? Infinity : disappearStart + (lastOrder + 1) * OUT_MS;
-    particles = points.map(makeParticle);
+    particles = points.map((pt) => makeParticle(pt));
 
     const groups = new Map();
     for (const pt of points) {
@@ -243,28 +223,159 @@
     flutter = [];
   }
 
-  function showAsk() {
-    if (askShown) return;
-    askShown = true;
-    askEl.classList.add('on');
+  function segDist(x, y, x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / l2)) : 0;
+    return Math.hypot(x - (x1 + dx * t), y - (y1 + dy * t));
   }
 
-  function startRing() {
-    if (ringPhase) return;
-    ringPhase = true;
+  function inPoly(x, y, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  function ringPoints() {
+    const cx = W / 2;
+    const cy = H * 0.4;
+    const R = Math.min(W * 0.27, H * 0.23);
+    const t = R * 0.27;
+    const rin = R - t;
+    const step = W < 720 ? 5 : 6;
+    const points = [];
+    const bandColor = (x) => colorAt(0.5 + (x - cx) / (R * 2.6));
+
+    for (let y = cy - R; y <= cy + R; y += step) {
+      for (let x = cx - R; x <= cx + R; x += step) {
+        const dx = x - cx, dy = y - cy;
+        const rr = Math.hypot(dx, dy);
+        if (rr > R - 1 || rr < rin + 1) continue;
+        const ang = Math.atan2(dy, dx);
+        const rim = Math.min(rr - rin, R - rr) / (t * 0.5);
+        const ridge = (Math.sin(ang * 42 + 0.7) + 1) / 2;
+        let ch, a;
+        if (rim > 0.62) {
+          ch = RAMP[1 + ((Math.random() * 3) | 0)];
+          a = 0.9 + Math.random() * 0.1;
+        } else {
+          ch = DUST_RAMP[(Math.random() * DUST_RAMP.length) | 0];
+          a = 0.3 + ridge * 0.42;
+        }
+        let c = bandColor(x);
+        if (Math.random() < 0.03) { ch = '+'; c = '#fff1d0'; a = 1; }
+        const d = Math.abs(Math.atan2(Math.sin(ang + Math.PI / 2), Math.cos(ang + Math.PI / 2)));
+        points.push({ x, y, delay: (d / Math.PI) * 2200, ch, c, a });
+      }
+    }
+
+    const gy = cy - R;
+    const y1 = gy - R * 0.55;
+    const y2 = gy - R * 0.13;
+    const y3 = gy + R * 0.22;
+    const w1 = R * 0.17;
+    const w2 = R * 0.31;
+    const poly = [[cx - w1, y1], [cx + w1, y1], [cx + w2, y2], [cx, y3], [cx - w2, y2]];
+    const segs = [
+      [cx - w1, y1, cx + w1, y1],
+      [cx - w1, y1, cx - w2, y2],
+      [cx + w1, y1, cx + w2, y2],
+      [cx - w2, y2, cx, y3],
+      [cx + w2, y2, cx, y3],
+      [cx, y1, cx, y3],
+      [cx - w2, y2, cx + w2, y2],
+    ];
+    for (let y = y1; y <= y3; y += 5) {
+      for (let x = cx - w2; x <= cx + w2; x += 5) {
+        if (!inPoly(x, y, poly)) continue;
+        let dmin = Infinity;
+        for (const s of segs) dmin = Math.min(dmin, segDist(x, y, s[0], s[1], s[2], s[3]));
+        const facet = dmin < 1.6;
+        if (!facet && Math.random() < 0.15) continue;
+        let ch, c, a;
+        if (facet) {
+          ch = RAMP[1 + ((Math.random() * 3) | 0)];
+          c = '#fff1d0';
+          a = 1;
+        } else {
+          ch = Math.random() < 0.6 ? DUST_RAMP[(Math.random() * DUST_RAMP.length) | 0] : RAMP[(Math.random() * 4) | 0];
+          c = colorAt(0.5 + (x - cx) / (R * 2));
+          a = 0.34 + Math.random() * 0.3;
+        }
+        points.push({ x, y, delay: 2350 + Math.random() * 260, ch, c, a });
+      }
+    }
+
+    return { points, gem: { x: cx, y: gy - R * 0.12, r: R * 0.34 } };
+  }
+
+  function makeRingParticle(pt, base, instant) {
+    const ang = Math.random() * Math.PI * 2;
+    const r = instant ? 0 : 70 + Math.random() * 180;
+    return {
+      x: pt.x + Math.cos(ang) * r,
+      y: pt.y + Math.sin(ang) * r,
+      tx: pt.x, ty: pt.y, vx: 0, vy: 0,
+      ch: pt.ch, c: pt.c, a: pt.a,
+      phase: Math.random() * Math.PI * 2,
+      glyphAt: 0,
+      reveal: instant ? -Infinity : base + pt.delay + Math.random() * 100,
+    };
+  }
+
+  function buildRing(instant) {
+    phase = 'ring';
+    const now = performance.now();
+    const data = ringPoints();
+    gem = data.gem;
+    ringParts = data.points.map((pt) => makeRingParticle(pt, now, instant));
+    particles = [];
+    letters = [];
+    sparkCursor = 0;
+    burstDone = true;
+    holdUntil = instant ? Infinity : now + 5600;
+    gemBurstAt = instant ? -Infinity : now + 2680;
+    gemBurstDone = !!instant;
+    nextGemSpark = -Infinity;
+    nextGemHeart = -Infinity;
+  }
+
+  function buildAsk(instant) {
+    phase = 'ask';
+    const now = performance.now();
+    const { points, lastOrder } = sampleText(ASK, {
+      maxChars: W < 720 ? 14 : 26,
+      maxW: W * 0.84,
+      maxH: H * 0.2,
+      centerY: H * 0.75,
+      maxSize: 76,
+    });
+    typingStart = instant ? -Infinity : now + 250;
+    typingEnd = instant ? -Infinity : typingStart + (lastOrder + 1) * ASK_MS;
+    disappearStart = Infinity;
     holdUntil = Infinity;
-    ringVideo.classList.add('on');
-    const p = ringVideo.play();
-    if (p && p.catch) p.catch(showAsk);
-    setTimeout(showAsk, 23000);
-  }
+    particles = points.map((pt) => makeParticle(pt, ASK_MS, 110, instant));
 
-  ringVideo.addEventListener('timeupdate', () => {
-    const d = ringVideo.duration;
-    if (d && isFinite(d) && ringVideo.currentTime >= d - 1.8) showAsk();
-  });
-  ringVideo.addEventListener('ended', showAsk);
-  ringVideo.addEventListener('error', showAsk);
+    const groups = new Map();
+    for (const pt of points) {
+      const g = groups.get(pt.order) || { x: 0, y: 0, n: 0 };
+      g.x += pt.x; g.y += pt.y; g.n++;
+      groups.set(pt.order, g);
+    }
+    letters = [...groups].sort((a, b) => a[0] - b[0]).map(([order, g]) => ({
+      t: typingStart + order * ASK_MS,
+      x: g.x / g.n,
+      y: g.y / g.n,
+    }));
+
+    sparkCursor = 0;
+    burstDone = !!instant || reduce;
+    nextAmbient = typingStart;
+    flutter = [];
+  }
 
   function seedStars() {
     stars = [];
@@ -357,14 +468,14 @@
     }
   }
 
-  function burst(now) {
+  function burst(now, bx = W / 2, by = H / 2) {
     const n = 150;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + Math.random() * 0.05;
       const v = 130 + Math.random() * 260;
       sparks.push({
-        x: W / 2,
-        y: H / 2,
+        x: bx,
+        y: by,
         vx: Math.cos(a) * v,
         vy: Math.sin(a) * v,
         born: now,
@@ -407,12 +518,17 @@
     seedStars();
     seedHearts();
     seedPetals();
-    if (!ringPhase) build();
+    if (phase === 'message') build();
+    else if (phase === 'ring') buildRing(false);
+    else { buildRing(true); buildAsk(true); }
   }
 
   function frame(now) {
     requestAnimationFrame(frame);
-    if (now >= holdUntil) startRing();
+    if (now >= holdUntil) {
+      if (phase === 'message') buildRing(false);
+      else if (phase === 'ring') buildAsk(false);
+    }
     const dt = Math.min(0.05, Math.max(0, (now - prevNow) / 1000)) || 0.016;
     prevNow = now;
 
@@ -421,7 +537,7 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    if (!reduce && !ringPhase && now > typingEnd) {
+    if (!reduce && phase !== 'ring' && now > typingEnd) {
       const beat = Math.max(0, Math.sin((now - typingEnd) * 0.0055)) ** 8;
       if (beat > 0.01) {
         const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.min(W, H) * 0.75);
@@ -432,7 +548,7 @@
       }
     }
 
-    if (!ringPhase && pointerIn && pressing) {
+    if (phase === 'message' && pointerIn && pressing) {
       holeR = Math.min(64, 16 + (now - pressAt) * 0.016);
     } else {
       holeR = Math.max(16, holeR - dt * 90);
@@ -515,6 +631,38 @@
       ctx.fillText(d.ch, d.x, d.y);
     }
 
+    if (phase !== 'message' && now > gemBurstAt - 900) {
+      const pulse = 0.5 + 0.5 * Math.sin(now * 0.0025);
+      const gr = Math.max(70, gem.r * 2.6);
+      const gg = ctx.createRadialGradient(gem.x, gem.y, 0, gem.x, gem.y, gr);
+      gg.addColorStop(0, `rgba(255,241,208,${(0.08 + 0.06 * pulse).toFixed(3)})`);
+      gg.addColorStop(0.45, `rgba(255,143,199,${(0.04 + 0.03 * pulse).toFixed(3)})`);
+      gg.addColorStop(1, 'rgba(255,143,199,0)');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = gg;
+      ctx.fillRect(gem.x - gr, gem.y - gr, gr * 2, gr * 2);
+    }
+
+    for (const p of ringParts) {
+      if (now < p.reveal) continue;
+      p.vx += (p.tx - p.x) * 0.06;
+      p.vy += (p.ty - p.y) * 0.06;
+      p.vx *= 0.87; p.vy *= 0.87;
+      p.x += p.vx; p.y += p.vy;
+
+      if (!reduce && now > p.glyphAt) {
+        p.ch = RAMP[(Math.random() * RAMP.length) | 0];
+        p.glyphAt = now + 2600 + Math.random() * 4200;
+      }
+
+      const x = p.x + Math.sin(now * 0.0012 + p.phase) * 1.1;
+      const y = p.y + Math.cos(now * 0.0009 + p.phase * 1.4) * 1.1;
+      const tw = reduce ? 1 : 0.78 + 0.22 * Math.sin(now * 0.002 + p.phase * 3);
+      ctx.globalAlpha = Math.min(1, p.a * tw);
+      ctx.fillStyle = p.c;
+      ctx.fillText(p.ch, x, y);
+    }
+
     for (const p of particles) {
       if (now < p.reveal) continue;
 
@@ -534,7 +682,7 @@
         const dx = p.x - mouse.x, dy = p.y - mouse.y;
         const d2 = dx * dx + dy * dy;
         const REACH = holeR * 7.5;
-        const infl = d2 < REACH * REACH ? 1 - Math.sqrt(d2) / REACH : 0;
+        const infl = phase === 'message' && d2 < REACH * REACH ? 1 - Math.sqrt(d2) / REACH : 0;
 
         const k = 0.06 * (1 - 0.85 * infl);
         p.vx += (p.tx - p.x) * k;
@@ -565,6 +713,21 @@
     }
 
     if (!reduce) {
+      if (phase !== 'message') {
+        if (!gemBurstDone && now >= gemBurstAt) {
+          addSparks(gem.x, gem.y, now, 90, 160, 1100);
+          addHearts(gem.x, gem.y, now, 10);
+          gemBurstDone = true;
+        }
+        if (now >= gemBurstAt && now >= nextGemSpark) {
+          addSparks(gem.x, gem.y, now, 2, 80, 900);
+          nextGemSpark = now + 240 + Math.random() * 700;
+        }
+        if (phase === 'ask' && now >= nextGemHeart) {
+          addHearts(gem.x, gem.y, now, 1);
+          nextGemHeart = now + 1200 + Math.random() * 1800;
+        }
+      }
       while (sparkCursor < letters.length && now >= letters[sparkCursor].t) {
         const L = letters[sparkCursor++];
         addSparks(L.x, L.y, now, 10, 170, 1000);
@@ -575,7 +738,7 @@
         nextAmbient = now + 260 + Math.random() * 320;
       }
       if (!burstDone && now >= typingEnd + 280) {
-        burst(now);
+        burst(now, W / 2, phase === 'ask' ? H * 0.75 : H / 2);
         for (let i = 0; i < 18; i++) {
           const L = letters[(Math.random() * letters.length) | 0];
           addHearts(L.x, L.y, now, 1);
@@ -612,7 +775,7 @@
     }
     ctx.font = `10px ${FONT}`;
 
-    if (!reduce && pointerIn && !ringPhase) {
+    if (!reduce && pointerIn && phase === 'message') {
       const r = holeR;
       const g = ctx.createRadialGradient(mouse.x, mouse.y, r * 0.9, mouse.x, mouse.y, r * 3);
       g.addColorStop(0, 'rgba(126,240,192,0.30)');
