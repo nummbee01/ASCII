@@ -64,9 +64,10 @@
   let W = 0, H = 0, DPR = 1, particles = [], dust = [], stars = [], sparks = [], hearts = [], flutter = [], petals = [];
   let typingStart = 0, typingEnd = 0, holdUntil = Infinity, disappearStart = Infinity;
   let letters = [], sparkCursor = 0, burstDone = true, prevNow = 0, nextAmbient = 0;
-  let phase = 'message', ringParts = [], gem = { x: 0, y: 0, r: 0 }, ringR = 1, ringRot = 0;
+  let phase = 'message', ringParts = [], ringS = 1, ringCy = 0, ringMidY = 0, ringOuter = 1;
+  let gem = { x: 0, y: 0, r: 0 }, orbitSparks = [];
   let gemBurstAt = -Infinity, gemBurstDone = true, flashAt = -Infinity;
-  let nextGemSpark = -Infinity, nextGemHeart = -Infinity, nextRingSpark = 0, nextBigHeart = 0, bigHearts = [];
+  let nextGemSpark = -Infinity, nextGemHeart = -Infinity, nextRingSpark = 0, nextBigHeart = 0, nextHeroHeart = 0, bigHearts = [];
   const mouse = { x: -1e4, y: -1e4 };
   let pointerIn = false, pressing = false, holeR = 16, pressAt = 0, meteor = null, nextMeteor = 0;
 
@@ -224,109 +225,153 @@
     flutter = [];
   }
 
-  function segDist(x, y, x1, y1, x2, y2) {
-    const dx = x2 - x1, dy = y2 - y1;
-    const l2 = dx * dx + dy * dy;
-    const t = l2 ? Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / l2)) : 0;
-    return Math.hypot(x - (x1 + dx * t), y - (y1 + dy * t));
-  }
+  // ---- 3D ring geometry ------------------------------------------------
+  const RING = {
+    R: 0.55,
+    TUBE: 0.08,
+    GIRDLE_Y: 0.92,
+    GIRDLE_R: 0.4,
+    TABLE_Y: 1.12,
+    TABLE_R: 0.2,
+    CULET_Y: 0.66,
+    SECTORS: 8,
+  };
+  const RING_TOP = RING.TABLE_Y;
+  const RING_BOTTOM = -RING.R - RING.TUBE;
+  const RING_MID = (RING_TOP + RING_BOTTOM) / 2;
+  const RING_H = RING_TOP - RING_BOTTOM;
+  const RING_BUCKETS = 30;
+  const ringBuckets = Array.from({ length: RING_BUCKETS }, () => []);
 
-  function inPoly(x, y, poly) {
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const [xi, yi] = poly[i], [xj, yj] = poly[j];
-      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-    }
-    return inside;
+  function ringCamera() {
+    const s = Math.min(
+      (H * (W < 720 ? 0.58 : 0.62)) / RING_H,
+      (W * 0.9) / (2 * (RING.R + RING.TUBE))
+    );
+    const half = (RING_H / 2) * s;
+    const cy = Math.min(H * 0.44, H * 0.72 - half);
+    return { s, cy };
   }
 
   function ringPoints() {
-    const cx = W / 2;
-    const cy = H * 0.42;
-    const R = Math.min(W * 0.28, H * 0.21);
-    const t = R * 0.27;
-    const rin = R - t;
-    const step = W < 720 ? 5 : 6;
-    const points = [];
-    const bandColor = (x) => colorAt(0.5 + (x - cx) / (R * 2.6));
+    const pts = [];
+    const theta = Math.max(100, Math.min(150, Math.round(2 * Math.PI * RING.R * ringS / 8)));
+    const phi = Math.max(10, Math.min(18, Math.round(2 * Math.PI * RING.TUBE * ringS / 7)));
 
-    for (let y = cy - R; y <= cy + R; y += step) {
-      for (let x = cx - R; x <= cx + R; x += step) {
-        const dx = x - cx, dy = y - cy;
-        const rr = Math.hypot(dx, dy);
-        if (rr > R - 1 || rr < rin + 1) continue;
-        const ang = Math.atan2(dy, dx);
-        const rim = Math.min(rr - rin, R - rr) / (t * 0.5);
-        const ridge = (Math.sin(ang * 42 + 0.7) + 1) / 2;
-        let ch, a;
-        if (rim > 0.62) {
-          ch = RAMP[1 + ((Math.random() * 3) | 0)];
-          a = 0.9 + Math.random() * 0.1;
-        } else {
-          ch = DUST_RAMP[(Math.random() * DUST_RAMP.length) | 0];
-          a = 0.3 + ridge * 0.42;
-        }
-        let c = bandColor(x);
-        if (Math.random() < 0.03) { ch = '+'; c = '#fff1d0'; a = 1; }
-        const d = Math.abs(Math.atan2(Math.sin(ang + Math.PI / 2), Math.cos(ang + Math.PI / 2)));
-        points.push({
-          x, y, delay: (d / Math.PI) * 2200, ch, c, a,
-          spark: Math.random() < 0.05,
-          sparkPhase: Math.random() * Math.PI * 2,
+    for (let i = 0; i < theta; i++) {
+      const a = (i / theta) * Math.PI * 2;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const tube = RING.TUBE * (1 - 0.3 * Math.max(0, sa) ** 6);
+      const d = Math.abs(Math.atan2(Math.sin(a + Math.PI / 2), Math.cos(a + Math.PI / 2))) / Math.PI;
+      for (let j = 0; j < phi; j++) {
+        const b = (j / phi) * Math.PI * 2;
+        const cb = Math.cos(b), sb = Math.sin(b);
+        const r = RING.R + tube * cb;
+        pts.push({
+          x: r * ca, y: r * sa, z: tube * sb * 1.35,
+          nx: ca * cb, ny: sa * cb, nz: sb,
+          kind: 0, facet: -1,
+          delay: d * 1700 + Math.random() * 70,
+          ch: Math.random() < 0.34 ? RAMP[(Math.random() * RAMP.length) | 0] : DUST_RAMP[(Math.random() * DUST_RAMP.length) | 0],
+          a: 0.9,
+          spark: Math.random() < 0.045,
+          phase: Math.random() * Math.PI * 2,
         });
       }
     }
 
-    const gy = cy - R;
-    const y1 = gy - R * 0.62;
-    const y2 = gy - R * 0.15;
-    const y3 = gy + R * 0.24;
-    const w1 = R * 0.19;
-    const w2 = R * 0.38;
-    const poly = [[cx - w1, y1], [cx + w1, y1], [cx + w2, y2], [cx, y3], [cx - w2, y2]];
-    const segs = [
-      [cx - w1, y1, cx + w1, y1],
-      [cx - w1, y1, cx - w2, y2],
-      [cx + w1, y1, cx + w2, y2],
-      [cx - w2, y2, cx, y3],
-      [cx + w2, y2, cx, y3],
-      [cx, y1, cx, y3],
-      [cx - w2, y2, cx + w2, y2],
-    ];
-    for (let y = y1; y <= y3; y += 5) {
-      for (let x = cx - w2; x <= cx + w2; x += 5) {
-        if (!inPoly(x, y, poly)) continue;
-        let dmin = Infinity;
-        for (const s of segs) dmin = Math.min(dmin, segDist(x, y, s[0], s[1], s[2], s[3]));
-        const facet = dmin < 1.6;
-        if (!facet && Math.random() < 0.15) continue;
-        let ch, c, a;
-        if (facet) {
-          ch = RAMP[1 + ((Math.random() * 3) | 0)];
-          c = '#fff1d0';
-          a = 1;
-        } else {
-          ch = Math.random() < 0.6 ? DUST_RAMP[(Math.random() * DUST_RAMP.length) | 0] : RAMP[(Math.random() * 4) | 0];
-          c = colorAt(0.5 + (x - cx) / (R * 2));
-          a = 0.34 + Math.random() * 0.3;
+    const addTri = (A, B, C, facet, N) => {
+      let nx = (B[1] - A[1]) * (C[2] - A[2]) - (B[2] - A[2]) * (C[1] - A[1]);
+      let ny = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]);
+      let nz = (B[0] - A[0]) * (C[1] - A[1]) - (B[1] - A[1]) * (C[0] - A[0]);
+      const len = Math.hypot(nx, ny, nz) || 1;
+      nx /= len; ny /= len; nz /= len;
+      const gx = (A[0] + B[0] + C[0]) / 3;
+      const gy = (A[1] + B[1] + C[1]) / 3 - (RING.GIRDLE_Y + RING.TABLE_Y) / 2;
+      const gz = (A[2] + B[2] + C[2]) / 3;
+      if (nx * gx + ny * gy + nz * gz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      for (let i = 0; i <= N; i++) {
+        for (let j = 0; j <= N - i; j++) {
+          const u = i / N, v = j / N;
+          const x = A[0] + (B[0] - A[0]) * u + (C[0] - A[0]) * v;
+          const y = A[1] + (B[1] - A[1]) * u + (C[1] - A[1]) * v;
+          const z = A[2] + (B[2] - A[2]) * u + (C[2] - A[2]) * v;
+          pts.push({
+            x, y, z, nx, ny, nz, kind: 1, facet,
+            delay: 1950 + ((y - RING.CULET_Y) / (RING.TABLE_Y - RING.CULET_Y)) * 560 + Math.random() * 70,
+            ch: Math.random() < 0.55 ? RAMP[(Math.random() * RAMP.length) | 0] : DUST_RAMP[(Math.random() * DUST_RAMP.length) | 0],
+            a: 1, edge: i === 0 || j === 0 || i + j === N,
+            phase: Math.random() * Math.PI * 2,
+          });
         }
-        points.push({ x, y, delay: 2350 + Math.random() * 260, ch, c, a });
+      }
+    };
+
+    const M = RING.SECTORS;
+    for (let i = 0; i < M; i++) {
+      const a0 = (i / M) * Math.PI * 2;
+      const a1 = ((i + 1) / M) * Math.PI * 2;
+      const g0 = [RING.GIRDLE_R * Math.cos(a0), RING.GIRDLE_Y, RING.GIRDLE_R * Math.sin(a0)];
+      const g1 = [RING.GIRDLE_R * Math.cos(a1), RING.GIRDLE_Y, RING.GIRDLE_R * Math.sin(a1)];
+      const t0 = [RING.TABLE_R * Math.cos(a0), RING.TABLE_Y, RING.TABLE_R * Math.sin(a0)];
+      const t1 = [RING.TABLE_R * Math.cos(a1), RING.TABLE_Y, RING.TABLE_R * Math.sin(a1)];
+      const culet = [0, RING.CULET_Y, 0];
+      addTri(g0, g1, t0, i * 2, 4);
+      addTri(g1, t1, t0, i * 2 + 1, 4);
+      addTri(g0, g1, culet, M * 2 + i, 6);
+    }
+
+    for (let k = 0; k < 2; k++) {
+      for (let i = 0; i < M; i++) {
+        const a = (i / M) * Math.PI * 2;
+        const r = RING.TABLE_R * (0.45 + 0.55 * k);
+        pts.push({
+          x: r * Math.cos(a), y: RING.TABLE_Y, z: r * Math.sin(a),
+          nx: 0, ny: 1, nz: 0, kind: 1, facet: M * 3,
+          delay: 2500 + Math.random() * 60,
+          ch: RAMP[1 + ((Math.random() * 3) | 0)], a: 1, edge: k === 1,
+          phase: Math.random() * Math.PI * 2,
+        });
+      }
+    }
+    pts.push({
+      x: 0, y: RING.TABLE_Y, z: 0, nx: 0, ny: 1, nz: 0, kind: 1, facet: M * 3,
+      delay: 2520, ch: '+', a: 1, phase: Math.random() * Math.PI * 2,
+    });
+
+    for (let i = 0; i < 4; i++) {
+      const a = Math.PI / 4 + i * (Math.PI / 2);
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const bx = 0.12 * ca, bz = 0.12 * sa, by = RING.R + 0.02;
+      const tx = (RING.GIRDLE_R + 0.01) * ca, tz = (RING.GIRDLE_R + 0.01) * sa, ty = RING.GIRDLE_Y - 0.03;
+      for (let k = 0; k < 12; k++) {
+        const u = k / 11;
+        pts.push({
+          x: bx + (tx - bx) * u, y: by + (ty - by) * u, z: bz + (tz - bz) * u,
+          nx: ca, ny: 0.2, nz: sa, kind: 2, facet: -1,
+          delay: 1720 + k * 9,
+          ch: k % 3 === 0 ? '|' : '+', a: 1,
+          phase: Math.random() * Math.PI * 2,
+        });
       }
     }
 
-    return { points, gem: { x: cx, y: gy - R * 0.19, r: R * 0.42 }, R };
+    return pts;
   }
 
   function makeRingParticle(pt, base, instant) {
     const ang = Math.random() * Math.PI * 2;
-    const r = instant ? 0 : 70 + Math.random() * 180;
+    const r = instant ? 0 : 0.35 + Math.random() * 0.55;
     return {
       x: pt.x + Math.cos(ang) * r,
-      y: pt.y + Math.sin(ang) * r,
-      tx: pt.x, ty: pt.y, vx: 0, vy: 0,
-      ch: pt.ch, c: pt.c, a: pt.a,
-      spark: pt.spark, sparkPhase: pt.sparkPhase,
-      phase: Math.random() * Math.PI * 2,
+      y: pt.y + Math.sin(ang) * r * 1.2,
+      z: pt.z + (Math.random() - 0.5) * r * 2,
+      tx: pt.x, ty: pt.y, tz: pt.z,
+      vx: 0, vy: 0, vz: 0,
+      nx: pt.nx, ny: pt.ny, nz: pt.nz,
+      kind: pt.kind, facet: pt.facet,
+      ch: pt.ch, a: pt.a, spark: pt.spark, edge: pt.edge,
+      phase: pt.phase,
       glyphAt: 0,
       reveal: instant ? -Infinity : base + pt.delay + Math.random() * 100,
     };
@@ -335,19 +380,40 @@
   function buildRing(instant) {
     phase = 'ring';
     const now = performance.now();
-    const data = ringPoints();
-    gem = data.gem;
-    ringR = data.R;
-    ringParts = data.points.map((pt) => makeRingParticle(pt, now, instant));
+    const cam = ringCamera();
+    ringS = cam.s;
+    ringCy = cam.cy;
+    ringMidY = RING_MID;
+    ringOuter = (RING.R + RING.TUBE) * ringS;
+    ringParts = ringPoints().map((pt) => makeRingParticle(pt, now, instant));
+    gem = {
+      x: W / 2,
+      y: ringCy - (RING.GIRDLE_Y - ringMidY) * ringS,
+      r: RING.GIRDLE_R * ringS * 1.2,
+    };
+    orbitSparks = [];
+    for (let i = 0; i < 96; i++) {
+      orbitSparks.push({
+        x: (Math.random() * 2 - 1) * 1.05,
+        y: -0.55 + Math.random() * 1.85,
+        z: (Math.random() * 2 - 1) * 0.6,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.45 + Math.random() * 1.4,
+        ch: Math.random() < 0.25 ? '✦' : Math.random() < 0.5 ? '*' : '+',
+        c: Math.random() < 0.5 ? '#fff1d0' : Math.random() < 0.7 ? '#ff8fc7' : '#7ef0c0',
+      });
+    }
     particles = [];
     letters = [];
     sparkCursor = 0;
     burstDone = true;
     holdUntil = instant ? Infinity : now + 5600;
-    gemBurstAt = instant ? -Infinity : now + 2680;
+    gemBurstAt = instant ? -Infinity : now + 2750;
     gemBurstDone = !!instant;
     nextGemSpark = -Infinity;
     nextGemHeart = -Infinity;
+    nextRingSpark = now + 1200;
+    flashAt = -Infinity;
   }
 
   function buildAsk(instant) {
@@ -357,8 +423,8 @@
       maxChars: W < 720 ? 14 : 26,
       maxW: W * 0.9,
       maxH: H * 0.2,
-      centerY: H * 0.76,
-      maxSize: 96,
+      centerY: H * 0.82,
+      maxSize: 100,
     });
     typingStart = instant ? -Infinity : now + 250;
     typingEnd = instant ? -Infinity : typingStart + (lastOrder + 1) * ASK_MS;
@@ -463,23 +529,24 @@
     const push = (hx, hy, ch, c, a, size) => heartCloud.push({
       x: hx / 17, y: hy / 17, ch, c, a, size, phase: Math.random() * Math.PI * 2,
     });
-    for (let i = 0; i < 96; i++) {
-      const t = (i / 96) * Math.PI * 2;
+    for (let i = 0; i < 120; i++) {
+      const t = (i / 120) * Math.PI * 2;
       const hx = 16 * Math.sin(t) ** 3;
       const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
-      push(hx, hy, i % 5 === 0 ? '♥' : i % 3 === 0 ? '*' : '+', Math.random() < 0.6 ? '#ff8fc7' : '#fff1d0', 0.95, 10);
+      push(hx, hy, i % 4 === 0 ? '♥' : i % 3 === 0 ? '*' : '+', Math.random() < 0.62 ? '#ff8fc7' : '#fff1d0', 0.95, 11);
     }
-    for (let i = 0; i < 170; i++) {
+    for (let i = 0; i < 220; i++) {
       const t = Math.random() * Math.PI * 2;
       const rr = Math.sqrt(Math.random()) * 0.85;
       const hx = 16 * Math.sin(t) ** 3 * rr;
       const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * rr;
-      push(hx, hy, Math.random() < 0.12 ? '♥' : '·', Math.random() < 0.6 ? '#ff8fc7' : '#7ef0c0', 0.45, 9);
+      push(hx, hy, Math.random() < 0.18 ? '♥' : '·', Math.random() < 0.6 ? '#ff8fc7' : '#7ef0c0', 0.5, 9);
     }
     return heartCloud;
   }
 
   function addBigHeart(x, y, now, size, alpha) {
+    if (bigHearts.length > 3) bigHearts.shift();
     bigHearts.push({
       x, y, born: now, life: 2800 + Math.random() * 700,
       size, alpha, pts: getHeartCloud(),
@@ -543,6 +610,104 @@
     }
   }
 
+  function drawRing(now) {
+    if (!ringParts.length) return;
+    const yaw = reduce ? 0 : (now * 0.00046) % (Math.PI * 2);
+    const cyaw = Math.cos(yaw), syaw = Math.sin(yaw);
+    const vx = 0, vy = 0.3134, vz = 0.9497;
+    const kx = 0.2018, ky = 0.8071, kz = 0.5549;
+    const hx = 0.107, hy = 0.5938, hz = 0.7974;
+
+    for (const b of ringBuckets) b.length = 0;
+
+    for (const p of ringParts) {
+      if (now < p.reveal) continue;
+      p.vx += (p.tx - p.x) * 0.06;
+      p.vy += (p.ty - p.y) * 0.06;
+      p.vz += (p.tz - p.z) * 0.06;
+      p.vx *= 0.87; p.vy *= 0.87; p.vz *= 0.87;
+      p.x += p.vx; p.y += p.vy; p.z += p.vz;
+
+      const rx = p.x * cyaw + p.z * syaw;
+      const rz = -p.x * syaw + p.z * cyaw;
+      const ry = p.y;
+      const persp = 5 / (5 - rz);
+      p.sx = W / 2 + rx * ringS * persp;
+      p.sy = ringCy - (ry - ringMidY) * ringS * persp;
+
+      const nx = p.nx * cyaw + p.nz * syaw;
+      const nz = -p.nx * syaw + p.nz * cyaw;
+      const ny = p.ny;
+      const facing = nx * vx + ny * vy + nz * vz;
+      if (p.kind !== 2 && facing < 0.01) continue;
+
+      const diff = Math.max(0, nx * kx + ny * ky + nz * kz);
+      const spec = Math.max(0, nx * hx + ny * hy + nz * hz) ** 26;
+      const shade = p.kind === 1
+        ? 0.7 + 0.3 * diff + 1.2 * spec
+        : 0.4 + 0.5 * diff + 0.75 * spec;
+
+      let col, ch = p.ch, alpha;
+      if (p.kind === 1) {
+        if (p.edge) {
+          col = '#fff1d0'; ch = '+'; alpha = 0.8;
+        } else {
+          const fire = (p.facet + ((now * 0.0025) | 0)) % 5;
+          col = spec > 0.3 ? (fire === 0 ? '#ff8fc7' : fire === 1 ? '#7ef0c0' : '#fff1d0') : '#fff1d0';
+          alpha = 0.55 + 0.45 * Math.min(1, shade);
+          if (spec > 0.55) { ch = '*'; alpha = 1; }
+          else if (spec > 0.2) { ch = '+'; alpha = Math.min(1, alpha + 0.15); }
+        }
+      } else if (p.kind === 2) {
+        col = '#fff1d0';
+        alpha = 0.9;
+      } else {
+        col = colorAt(p.sx / W);
+        alpha = 0.3 + 0.7 * Math.min(1, shade);
+      }
+
+      if (p.spark) {
+        const tw = Math.max(0, Math.sin(now * 0.0035 + p.phase)) ** 6;
+        if (tw > 0.28) {
+          ch = tw > 0.6 ? '*' : '+';
+          col = tw > 0.6 ? '#fff1d0' : '#ff8fc7';
+          alpha = Math.min(1, alpha + tw * 0.6);
+        }
+      }
+      if (reduce) alpha = Math.max(alpha, 0.8);
+      else alpha *= 0.82 + 0.18 * Math.sin(now * 0.002 + p.phase * 3);
+
+      p.sa = alpha;
+      p.sc = col;
+      p.sch = ch;
+      if (p.kind === 2) continue;
+      const bi = Math.max(0, Math.min(RING_BUCKETS - 1, (((rz + 0.9) / 1.8) * RING_BUCKETS) | 0));
+      ringBuckets[bi].push(p);
+    }
+
+    for (const bucket of ringBuckets) {
+      for (const p of bucket) {
+        ctx.globalAlpha = p.sa;
+        ctx.fillStyle = p.sc;
+        ctx.fillText(
+          p.sch,
+          p.sx + Math.sin(now * 0.0012 + p.phase) * 0.7,
+          p.sy + Math.cos(now * 0.0009 + p.phase * 1.4) * 0.7
+        );
+      }
+    }
+
+    ctx.font = `13px ${FONT}`;
+    for (const p of ringParts) {
+      if (p.kind !== 2 || p.sa === undefined || now < p.reveal) continue;
+      ctx.globalAlpha = p.sa;
+      ctx.fillStyle = p.sc;
+      ctx.fillText(p.sch, p.sx, p.sy);
+    }
+    ctx.font = `10px ${FONT}`;
+    ctx.globalAlpha = 1;
+  }
+
   function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth;
@@ -592,8 +757,6 @@
       holeR = Math.max(16, holeR - dt * 90);
     }
 
-    ringRot = reduce ? 0 : 0.65 * Math.sin(now * 0.00055);
-
     const flash = Math.max(0, 1 - (now - flashAt) / 800);
     if (flash > 0) {
       const fg = ctx.createRadialGradient(gem.x, gem.y, 0, gem.x, gem.y, Math.max(W, H) * 0.45);
@@ -607,13 +770,17 @@
 
     if (!reduce && now >= nextBigHeart) {
       if (phase === 'message') {
-        addBigHeart(W * (0.15 + Math.random() * 0.7), H * (0.15 + Math.random() * 0.6), now, 90 + Math.random() * 80, 0.18);
+        addBigHeart(W * (0.15 + Math.random() * 0.7), H * (0.15 + Math.random() * 0.6), now, 120 + Math.random() * 100, 0.2);
         nextBigHeart = now + 6500 + Math.random() * 5500;
       } else {
         const side = Math.random() < 0.5 ? -1 : 1;
-        addBigHeart(W / 2 + side * (ringR * 0.9 + W * 0.08), H * 0.3 + Math.random() * H * 0.24, now, 100 + Math.random() * 80, 0.5);
-        nextBigHeart = now + 1800 + Math.random() * 2000;
+        addBigHeart(W / 2 + side * (ringOuter * 0.95 + W * 0.04), ringCy - ringS * 0.18 + Math.random() * ringS * 0.6, now, 170 + Math.random() * 120, 0.55);
+        nextBigHeart = now + 2200 + Math.random() * 2200;
       }
+    }
+    if (!reduce && phase !== 'message' && now >= nextHeroHeart) {
+      addBigHeart(W / 2, ringCy + ringS * 0.015, now, (RING.R - RING.TUBE) * ringS * 0.94, 0.75);
+      nextHeroHeart = now + 4800 + Math.random() * 1800;
     }
 
     for (const h of hearts) {
@@ -725,36 +892,25 @@
       ctx.fillRect(gem.x - gr, gem.y - gr, gr * 2, gr * 2);
     }
 
-    const ringCos = Math.cos(ringRot);
-    const ringSin = Math.sin(ringRot);
-    for (const p of ringParts) {
-      if (now < p.reveal) continue;
-      p.vx += (p.tx - p.x) * 0.06;
-      p.vy += (p.ty - p.y) * 0.06;
-      p.vx *= 0.87; p.vy *= 0.87;
-      p.x += p.vx; p.y += p.vy;
+    drawRing(now);
 
-      if (!reduce && now > p.glyphAt) {
-        p.ch = RAMP[(Math.random() * RAMP.length) | 0];
-        p.glyphAt = now + 2600 + Math.random() * 4200;
-      }
-
-      const depth = ((p.x - W / 2) / ringR) * ringSin;
-      const dim = 1 - 0.22 * Math.max(0, -depth);
-      const x = W / 2 + (p.x - W / 2) * ringCos + Math.sin(now * 0.0012 + p.phase) * 1.1;
-      const y = p.y + Math.cos(now * 0.0009 + p.phase * 1.4) * 1.1;
-      const tw = reduce ? 1 : 0.78 + 0.22 * Math.sin(now * 0.002 + p.phase * 3);
-      ctx.globalAlpha = Math.min(1, p.a * tw * dim);
-      ctx.fillStyle = p.c;
-      ctx.fillText(p.ch, x, y);
-
-      if (p.spark && !reduce) {
-        const tw2 = Math.max(0, Math.sin(now * 0.0035 + p.sparkPhase)) ** 6;
-        if (tw2 > 0.08) {
-          ctx.globalAlpha = tw2 * 0.9;
-          ctx.fillStyle = tw2 > 0.62 ? '#fff1d0' : '#ff8fc7';
-          ctx.fillText(tw2 > 0.62 ? '*' : '+', x + 4, y - 4);
-        }
+    if (!reduce && phase !== 'message') {
+      const yaw = (now * 0.00046) % (Math.PI * 2);
+      const cy2 = Math.cos(yaw), sy2 = Math.sin(yaw);
+      ctx.font = `13px ${FONT}`;
+      for (const o of orbitSparks) {
+        const rx = o.x * cy2 + o.z * sy2;
+        const rz = -o.x * sy2 + o.z * cy2;
+        const persp = 5 / (5 - rz);
+        const sx = W / 2 + rx * ringS * persp;
+        const sy = ringCy - (o.y - ringMidY) * ringS * persp;
+        if (sx < 8 || sx > W - 8 || sy < 8 || sy > H - 8) continue;
+        const tw = Math.sin(now * 0.002 * o.speed + o.phase);
+        if (tw < 0.35) continue;
+        const k = (tw - 0.35) / 0.65;
+        ctx.globalAlpha = k * 0.95;
+        ctx.fillStyle = o.c;
+        ctx.fillText(k > 0.72 ? '*' : o.ch, sx, sy);
       }
     }
     ctx.font = `10px ${FONT}`;
@@ -823,8 +979,8 @@
         }
         if (now >= nextRingSpark && ringParts.length) {
           const p = ringParts[(Math.random() * ringParts.length) | 0];
-          addSparks(W / 2 + (p.tx - W / 2) * Math.cos(ringRot), p.ty, now, 1, 48, 650);
-          nextRingSpark = now + 70 + Math.random() * 120;
+          if (p.sx !== undefined) addSparks(p.sx, p.sy, now, 1, 48, 650);
+          nextRingSpark = now + 55 + Math.random() * 95;
         }
         if (phase === 'ask' && now >= nextGemHeart) {
           addHearts(gem.x, gem.y, now, 1);
